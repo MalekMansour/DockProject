@@ -32,6 +32,11 @@ def create_table():
 # Call create_table() at startup
 create_table()
 
+# Root route
+@app.route('/')
+def index():
+    return jsonify({"message": "Welcome to the Student API! Use /student for POST and GET requests."})
+
 # Route to create a student
 @app.route('/student', methods=['POST'])
 def create_student():
