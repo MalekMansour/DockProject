@@ -1,4 +1,5 @@
 import mysql.connector
+import datetime
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
@@ -13,16 +14,16 @@ def get_db_connection():
         database="student"
     )
 
-# Student table (updated schema without presentDate)
+# Updated Student table schema to match JSON format
 def create_table():
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute(""" 
         CREATE TABLE IF NOT EXISTS students (
-            studentID INT AUTO_INCREMENT PRIMARY KEY,  -- Auto-incrementing studentID
-            first_name VARCHAR(100) NOT NULL,  -- First name
-            last_name VARCHAR(100) NOT NULL,  -- Last name
-            course VARCHAR(100) NOT NULL  -- Course name up to 100 chars
+            studentID INT AUTO_INCREMENT PRIMARY KEY,  
+            studentName VARCHAR(200) NOT NULL,  
+            course VARCHAR(100) NOT NULL,  
+            presentDate DATE NOT NULL  
         )
     """)
     conn.commit()
@@ -32,27 +33,34 @@ def create_table():
 # Call create_table() at startup
 create_table()
 
-# **New Route: Welcome Message**
+# **Welcome Route**
 @app.route('/', methods=['GET'])
 def home():
     return jsonify({"message": "Welcome to the Student API!"})
 
-# Route to create a student
+# **Route to create a student**
 @app.route('/student', methods=['POST'])
 def create_student():
     data = request.json
-    first_name = data.get('first_name')
-    last_name = data.get('last_name')
+    studentID = data.get('studentID')  # Not used since it's auto-incremented
+    studentName = data.get('studentName')
     course = data.get('course')
+    presentDate = data.get('presentDate')
 
-    # Ensure all fields are provided in the request
-    if not first_name or not last_name or not course:
+    # Ensure all required fields are provided
+    if not studentName or not course or not presentDate:
         return jsonify({"error": "Missing data"}), 400
+
+    # Validate date format
+    try:
+        datetime.datetime.strptime(presentDate, "%Y-%m-%d")
+    except ValueError:
+        return jsonify({"error": "Invalid date format, expected YYYY-MM-DD"}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO students (first_name, last_name, course) VALUES (%s, %s, %s)",
-                   (first_name, last_name, course))
+    cursor.execute("INSERT INTO students (studentName, course, presentDate) VALUES (%s, %s, %s)",
+                   (studentName, course, presentDate))
 
     conn.commit()
     cursor.close()
@@ -60,12 +68,12 @@ def create_student():
 
     return jsonify({"message": "Student added successfully"}), 201
 
-# Route to get all students
+# **Route to get all students**
 @app.route('/student', methods=['GET'])
 def get_students():
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT studentID, first_name, last_name, course FROM students")
+    cursor.execute("SELECT studentID, studentName, course, presentDate FROM students")
     students = cursor.fetchall()
     cursor.close()
     conn.close()
