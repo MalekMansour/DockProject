@@ -6,21 +6,21 @@ app = Flask(__name__)
 # Database connection
 def get_db_connection():
     return mysql.connector.connect(
-        host="localhost",
-        port=3307,  # Port for Docker
+        host="localhost", 
+        port=3307,  # Change this if needed
         user="root",
         password="password",
         database="student"
     )
 
-# Student table (Updated Schema)
+# Create students table if not exists
 def create_table():
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute(""" 
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS students (
             studentID INT PRIMARY KEY,  
-            studentName VARCHAR(200) NOT NULL,  
+            studentName VARCHAR(100) NOT NULL,  
             course VARCHAR(100) NOT NULL,  
             presentDate DATE NOT NULL  
         )
@@ -32,7 +32,7 @@ def create_table():
 # Call create_table() at startup
 create_table()
 
-# Welcome message
+# Welcome route
 @app.route('/', methods=['GET'])
 def home():
     return jsonify({"message": "Welcome to the Student API!"})
@@ -41,7 +41,7 @@ def home():
 @app.route('/student', methods=['POST'])
 def create_student():
     data = request.json
-    studentID = data.get('studentID')  # Now taken from input
+    studentID = data.get('studentID')  
     studentName = data.get('studentName')
     course = data.get('course')
     presentDate = data.get('presentDate')
@@ -52,6 +52,17 @@ def create_student():
 
     conn = get_db_connection()
     cursor = conn.cursor()
+
+    # Check if student exists
+    cursor.execute("SELECT * FROM students WHERE studentID = %s", (studentID,))
+    existing_student = cursor.fetchone()
+    
+    if existing_student:
+        cursor.close()
+        conn.close()
+        return jsonify({"error": "Student already exists"}), 409  # HTTP 409 Conflict
+
+    # Insert new student
     cursor.execute(
         "INSERT INTO students (studentID, studentName, course, presentDate) VALUES (%s, %s, %s, %s)",
         (studentID, studentName, course, presentDate)
@@ -64,11 +75,11 @@ def create_student():
     return jsonify({"message": "Student added successfully"}), 201
 
 # Route to get all students
-@app.route('/student', methods=['GET'])
+@app.route('/students', methods=['GET'])
 def get_students():
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT studentID, studentName, course, DATE_FORMAT(presentDate, '%Y-%m-%d') AS presentDate FROM students")
+    cursor.execute("SELECT studentID, studentName, course, presentDate FROM students")
     students = cursor.fetchall()
     cursor.close()
     conn.close()
