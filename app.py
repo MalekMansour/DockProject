@@ -7,7 +7,7 @@ app = Flask(__name__)
 def get_db_connection():
     return mysql.connector.connect(
         host="localhost", 
-        port=3307,  # Change this if needed
+        port=3307,  # PORT for container
         user="root",
         password="password",
         database="student"
@@ -29,7 +29,6 @@ def create_table():
     cursor.close()
     conn.close()
 
-# Call create_table() at startup
 create_table()
 
 # Welcome route
@@ -74,8 +73,8 @@ def create_student():
 
     return jsonify({"message": "Student added successfully"}), 201
 
-# Route to get all students
-@app.route('/students', methods=['GET'])
+# Route to get all students (I have to make sure its always /student and not /students)
+@app.route('/student', methods=['GET'])
 def get_students():
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
