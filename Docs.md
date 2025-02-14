@@ -10,9 +10,8 @@ docker exec -it mysql_container bash
 mysql -u root -p
 password
 
-docker exec -it localhost bash
-mysql -u root -p
-root
+Show the Columns
+SHOW COLUMNS FROM student;
 
 Enter the database (sql)
 USE student;
