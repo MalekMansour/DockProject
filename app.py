@@ -6,7 +6,7 @@ app = Flask(__name__)
 # Database connection
 def get_db_connection():
     return mysql.connector.connect(
-        host="localhost", 
+        host="localhost",  # HOST for container
         port=3307,  # PORT for container
         user="root",
         password="password",
@@ -73,7 +73,7 @@ def create_student():
 
     return jsonify({"message": "Student added successfully"}), 201
 
-# Route to get all students (I have to make sure its always /student and not /students)
+# Route to get all students (always /student and not /students)
 @app.route('/student', methods=['GET'])
 def get_students():
     conn = get_db_connection()
@@ -85,6 +85,42 @@ def get_students():
 
     return jsonify(students)
 
+# Route to update a student's record
+@app.route('/student', methods=['PUT'])
+def update_student():
+    data = request.json
+    studentID = data.get('studentID')
+    studentName = data.get('studentName')
+    course = data.get('course')
+    presentDate = data.get('presentDate')
+
+    # Ensure all fields are provided
+    if not studentID or not studentName or not course or not presentDate:
+        return jsonify({"error": "Missing data"}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Check if student exists
+    cursor.execute("SELECT * FROM students WHERE studentID = %s", (studentID,))
+    existing_student = cursor.fetchone()
+
+    if not existing_student:
+        cursor.close()
+        conn.close()
+        return jsonify({"error": "Student not found"}), 404  # HTTP 404 Not Found
+
+    # Update student record
+    cursor.execute(
+        "UPDATE students SET studentName = %s, course = %s, presentDate = %s WHERE studentID = %s",
+        (studentName, course, presentDate, studentID)
+    )
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    return jsonify({"message": "Student updated successfully"}), 200
+
 if __name__ == '__main__':
     app.run(host='localhost', port=8080, debug=True)
-
