@@ -12,7 +12,7 @@ password
 
 Show the Columns
 SHOW COLUMNS FROM student;
-
+SELECT * FROM students;
 Enter the database (sql)
 USE student;
 
