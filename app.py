@@ -1,19 +1,80 @@
-import mysql.connector
+import jwt
+import datetime
+from functools import wraps
 from flask import Flask, request, jsonify
+import mysql.connector
 
 app = Flask(__name__)
+app.config['SECRET_KEY'] = 'your_secret_key'  # Replace with a secure key
 
-# Database connection
+# ---------------------------------
+# JWT Authentication Setup
+# ---------------------------------
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = None
+        # Expect the token in the Authorization header as "Bearer <token>"
+        if 'Authorization' in request.headers:
+            auth_header = request.headers['Authorization']
+            parts = auth_header.split()
+            if len(parts) == 2 and parts[0] == 'Bearer':
+                token = parts[1]
+        if not token:
+            return jsonify({'message': 'Token is missing!'}), 401
+        try:
+            jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
+        except jwt.ExpiredSignatureError:
+            return jsonify({'message': 'Token has expired!'}), 401
+        except Exception as e:
+            return jsonify({'message': 'Token is invalid!'}), 401
+        return f(*args, **kwargs)
+    return decorated
+
+@app.route('/login', methods=['POST'])
+def login():
+    auth = request.json
+    if not auth or not auth.get('username') or not auth.get('password'):
+        return jsonify({'message': 'Missing credentials'}), 401
+
+    # For demonstration, we use hardcoded credentials. Replace this with a proper user check.
+    if auth['username'] != 'admin' or auth['password'] != 'admin':
+        return jsonify({'message': 'Invalid credentials'}), 401
+
+    token = jwt.encode({
+        'user': auth['username'],
+        'exp': datetime.datetime.utcnow() + datetime.timedelta(minutes=30)
+    }, app.config['SECRET_KEY'], algorithm="HS256")
+    
+    return jsonify({'token': token})
+
+# ---------------------------------
+# Database Setup & Helper Functions
+# ---------------------------------
+def create_database():
+    conn = mysql.connector.connect(
+        host="localhost",
+        port=3307,
+        user="root",
+        password="password"
+    )
+    cursor = conn.cursor()
+    cursor.execute("CREATE DATABASE IF NOT EXISTS StudentDB")
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+create_database()
+
 def get_db_connection():
     return mysql.connector.connect(
-        host="localhost",  # HOST for container
-        port=3307,  # PORT for container
+        host="localhost",  # If using Docker, consider "host.docker.internal" for host MySQL connections
+        port=3307,
         user="root",
         password="password",
-        database="student"
+        database="StudentDB"
     )
 
-# Create students table if not exists
 def create_table():
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -31,62 +92,82 @@ def create_table():
 
 create_table()
 
-# Welcome route
+# ---------------------------------
+# API Endpoints (Protected by JWT)
+# ---------------------------------
 @app.route('/', methods=['GET'])
 def home():
     return jsonify({"message": "Welcome to the Student API!"})
 
-# Route to create a student
 @app.route('/student', methods=['POST'])
+@token_required
 def create_student():
     data = request.json
-    studentID = data.get('studentID')  
+    studentID = data.get('studentID')
     studentName = data.get('studentName')
     course = data.get('course')
     presentDate = data.get('presentDate')
 
-    # Ensure all fields are provided
     if not studentID or not studentName or not course or not presentDate:
         return jsonify({"error": "Missing data"}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor()
-
-    # Check if student exists
     cursor.execute("SELECT * FROM students WHERE studentID = %s", (studentID,))
     existing_student = cursor.fetchone()
-    
+
     if existing_student:
         cursor.close()
         conn.close()
-        return jsonify({"error": "Student already exists"}), 409  # HTTP 409 Conflict
+        return jsonify({"error": "Student already exists"}), 409
 
-    # Insert new student
     cursor.execute(
         "INSERT INTO students (studentID, studentName, course, presentDate) VALUES (%s, %s, %s, %s)",
         (studentID, studentName, course, presentDate)
     )
-
     conn.commit()
     cursor.close()
     conn.close()
 
     return jsonify({"message": "Student added successfully"}), 201
 
-# Route to get all students (always /student and not /students)
-@app.route('/student', methods=['GET'])
+@app.route('/students', methods=['GET'])
+@token_required
 def get_students():
-    conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT studentID, studentName, course, presentDate FROM students")
-    students = cursor.fetchall()
-    cursor.close()
-    conn.close()
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        query = "SELECT studentID, studentName, course, presentDate FROM students"
+        cursor.execute(query)
+        students = cursor.fetchall()
+    except Exception as error:
+        return jsonify({"error": str(error)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+    return jsonify(students), 200
 
-    return jsonify(students)
+@app.route('/student/<int:studentID>', methods=['GET'])
+@token_required
+def get_student(studentID):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        query = "SELECT studentID, studentName, course, presentDate FROM students WHERE studentID = %s"
+        cursor.execute(query, (studentID,))
+        student = cursor.fetchone()
+    except Exception as error:
+        return jsonify({"error": str(error)}), 500
+    finally:
+        cursor.close()
+        conn.close()
 
-# Route to update a student's record
+    if student is None:
+        return jsonify({"error": "Student not found"}), 404
+    return jsonify(student), 200
+
 @app.route('/student', methods=['PUT'])
+@token_required
 def update_student():
     data = request.json
     studentID = data.get('studentID')
@@ -94,33 +175,51 @@ def update_student():
     course = data.get('course')
     presentDate = data.get('presentDate')
 
-    # Ensure all fields are provided
     if not studentID or not studentName or not course or not presentDate:
         return jsonify({"error": "Missing data"}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor()
-
-    # Check if student exists
     cursor.execute("SELECT * FROM students WHERE studentID = %s", (studentID,))
     existing_student = cursor.fetchone()
 
     if not existing_student:
         cursor.close()
         conn.close()
-        return jsonify({"error": "Student not found"}), 404  # HTTP 404 Not Found
+        return jsonify({"error": "Student not found"}), 404
 
-    # Update student record
     cursor.execute(
         "UPDATE students SET studentName = %s, course = %s, presentDate = %s WHERE studentID = %s",
         (studentName, course, presentDate, studentID)
     )
-
     conn.commit()
     cursor.close()
     conn.close()
 
     return jsonify({"message": "Student updated successfully"}), 200
 
+@app.route('/student/<int:studentID>', methods=['DELETE'])
+@token_required
+def delete_student(studentID):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM students WHERE studentID = %s", (studentID,))
+    existing_student = cursor.fetchone()
+
+    if not existing_student:
+        cursor.close()
+        conn.close()
+        return jsonify({"error": "Student does not exist"}), 404
+
+    cursor.execute("DELETE FROM students WHERE studentID = %s", (studentID,))
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    return jsonify({"message": "Student deleted successfully"}), 200
+
+# ---------------------------------
+# Run the Flask App
+# ---------------------------------
 if __name__ == '__main__':
-    app.run(host='localhost', port=8080, debug=True)
+    app.run(host='0.0.0.0', debug=True)
