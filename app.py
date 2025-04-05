@@ -5,7 +5,7 @@ from flask import Flask, request, jsonify
 import mysql.connector
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your_secret_key'  # Replace with a secure key
+app.config['SECRET_KEY'] = 'your_secret_key'  
 
 # ---------------------------------
 # JWT Authentication Setup
@@ -68,7 +68,7 @@ create_database()
 
 def get_db_connection():
     return mysql.connector.connect(
-        host="localhost",  # If using Docker, consider "host.docker.internal" for host MySQL connections
+        host="localhost",  
         port=3307,
         user="root",
         password="password",
